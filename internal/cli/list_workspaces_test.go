@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/artschekoff/slack-cli/internal/credentials"
@@ -17,7 +18,7 @@ func TestListWorkspacesCommand_Empty(t *testing.T) {
 
 	err := cmd.Run(context.Background())
 	require.NoError(t, err)
-	assert.Contains(t, out.String(), "No workspaces found")
+	assert.Equal(t, "", out.String(), "empty store should produce no output")
 }
 
 func TestListWorkspacesCommand_WithEntries(t *testing.T) {
@@ -30,10 +31,23 @@ func TestListWorkspacesCommand_WithEntries(t *testing.T) {
 
 	err := cmd.Run(context.Background())
 	require.NoError(t, err)
-	text := out.String()
-	assert.Contains(t, text, "acme")
-	assert.Contains(t, text, "globex")
-	assert.NotContains(t, text, "t1", "tokens must not appear in output")
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	assert.ElementsMatch(t, []string{"acme", "globex"}, lines, "output must be workspace names only, one per line")
+	assert.NotContains(t, out.String(), "t1", "tokens must not appear in output")
+	assert.NotContains(t, out.String(), "Saved", "output must contain no header text")
+	assert.NotContains(t, out.String(), "-", "output must contain no bullet points")
+}
+
+func TestListWorkspacesCommand_SingleEntry(t *testing.T) {
+	store := newTempStore(t)
+	require.NoError(t, store.Save(context.Background(), "myteam", credentials.Creds{Token: "t1", Cookie: "c1"}))
+
+	var out bytes.Buffer
+	cmd := &ListWorkspacesCommand{Store: store, Output: &out}
+
+	err := cmd.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "myteam\n", out.String(), "single workspace: just the name followed by newline")
 }
 
 func TestListWorkspacesCommand_StoreError(t *testing.T) {
