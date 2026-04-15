@@ -52,10 +52,11 @@ Credential management:
   slack-cli remove-creds [workspace]            delete stored credentials
 
 Slack operations:
-  slack-cli search <workspace> <query>          search messages
-  slack-cli load-thread <workspace> <ch> <ts>   load a thread
-  slack-cli load-context <workspace> <ch> <ts>  load thread as markdown for AI
-  slack-cli get-user <workspace> <user-id>      resolve user ID to display name
+  slack-cli search <workspace> <query>                  search messages
+  slack-cli search-channels <workspace> <pattern>       list channels whose names contain pattern (JSON)
+  slack-cli load-thread <workspace> <ch> <ts>           load a thread
+  slack-cli load-context <workspace> <ch> <ts>          load thread as markdown for AI
+  slack-cli get-user <workspace> <user-id>              resolve user ID to display name
 
 Use "slack-cli <command> --help" for flags and examples for each command.`,
 		SilenceUsage:  true,
@@ -71,6 +72,7 @@ Use "slack-cli <command> --help" for flags and examples for each command.`,
 	root.AddCommand(newAuthStartCmd(deps))
 	root.AddCommand(newAuthCompleteCmd(deps))
 	root.AddCommand(newSearchCmd(deps))
+	root.AddCommand(newSearchChannelsCmd(deps))
 	root.AddCommand(newLoadThreadCmd(deps))
 	root.AddCommand(newGetUserCmd(deps))
 	root.AddCommand(newLoadContextCmd(deps))
@@ -297,6 +299,47 @@ Examples:
 	}
 	c.Flags().IntVar(&count, "count", 20, "Maximum number of results (default 20, max 100)")
 	c.Flags().StringVar(&startFrom, "start-from", "", "Only messages on or after this date (YYYY-MM-DD)")
+	return c
+}
+
+func newSearchChannelsCmd(deps RootDeps) *cobra.Command {
+	var systemEvents, botMessages bool
+	c := &cobra.Command{
+		Use:   "search-channels <workspace> <pattern>",
+		Short: "List Slack channels matching a name pattern with their messages (JSON output)",
+		Long: `Lists all accessible Slack channels whose names contain the given substring
+and writes a JSON array of {id, name, messages} objects to stdout.
+
+Matching is case-insensitive and treats hyphens as spaces, so "epic 970"
+and "970" both match a channel named "epic-970".
+
+By default system notifications (joined/left, topic changes, etc.) and bot/app
+messages are filtered out. Use the flags below to include them.
+
+Flags:
+  --system-events  Include system notification messages (channel_join, channel_leave, etc.)
+  --bot-messages   Include bot and app integration messages
+
+Examples:
+  slack-cli search-channels acme 970
+  slack-cli search-channels acme "epic 970"
+  slack-cli search-channels acme deploy --system-events
+  slack-cli search-channels acme deploy --bot-messages
+  slack-cli search-channels acme deploy --system-events --bot-messages`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			cmd := &SearchChannelsCommand{
+				Store:         deps.Store,
+				Output:        deps.Output,
+				ClientFactory: deps.ClientFactory,
+				SystemEvents:  systemEvents,
+				BotMessages:   botMessages,
+			}
+			return cmd.Run(cobraCmd.Context(), args[0], args[1])
+		},
+	}
+	c.Flags().BoolVar(&systemEvents, "system-events", false, "Include system notification messages (channel_join, channel_leave, etc.)")
+	c.Flags().BoolVar(&botMessages, "bot-messages", false, "Include bot and app integration messages")
 	return c
 }
 

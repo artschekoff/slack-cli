@@ -30,7 +30,7 @@ func resolveClient(ctx context.Context, store *credentials.Store, workspace stri
 		return nil, fmt.Errorf("%w: no credentials found for workspace '%s'. Use auth_start to authenticate", ErrCredentialsNotFound, workspace)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read credentials for workspace '%s'", workspace)
+		return nil, fmt.Errorf("failed to read credentials for workspace '%s': %w", workspace, err)
 	}
 	if creds.Token == "" || creds.Cookie == "" {
 		return nil, fmt.Errorf("%w: incomplete credentials for workspace '%s'. Use auth_start to re-authenticate", ErrCredentialsNotFound, workspace)

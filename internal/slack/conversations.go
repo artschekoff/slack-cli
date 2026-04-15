@@ -14,8 +14,40 @@ type Message struct {
 	Text      string
 	Timestamp string
 	RawTS     string
+	Subtype   string // empty for regular messages; e.g. "channel_join", "bot_message"
+	BotID     string // non-empty for app/bot messages that omit the "bot_message" subtype
 	Reactions []Reaction
 	Files     []string
+}
+
+// systemMessageSubtypes contains Slack message subtypes that represent
+// channel notifications rather than user-authored content.
+var systemMessageSubtypes = map[string]struct{}{
+	"channel_join":      {},
+	"channel_leave":     {},
+	"channel_topic":     {},
+	"channel_purpose":   {},
+	"channel_name":      {},
+	"channel_archive":   {},
+	"channel_unarchive": {},
+	"pinned_item":       {},
+	"unpinned_item":     {},
+}
+
+// IsSystemMessage reports whether the message is an automated channel
+// notification (channel_join, channel_leave, topic change, etc.) rather
+// than a user-authored message.
+func (m Message) IsSystemMessage() bool {
+	_, ok := systemMessageSubtypes[m.Subtype]
+	return ok
+}
+
+// IsBotMessage reports whether the message was sent by a bot or app integration.
+// Slack signals this in two ways: subtype "bot_message", or a non-empty bot_id
+// on messages that carry no subtype (common for app integration notifications
+// such as Jira "connected this channel" events).
+func (m Message) IsBotMessage() bool {
+	return m.Subtype == "bot_message" || m.BotID != ""
 }
 
 // Reaction holds emoji reaction data.
@@ -28,6 +60,8 @@ type conversationMessage struct {
 	User      string `json:"user"`
 	Text      string `json:"text"`
 	Ts        string `json:"ts"`
+	Subtype   string `json:"subtype"`
+	BotID     string `json:"bot_id"`
 	Reactions []struct {
 		Name  string `json:"name"`
 		Count int    `json:"count"`
@@ -175,6 +209,8 @@ func convertMessages(raw []conversationMessage) []Message {
 			Text:      m.Text,
 			Timestamp: FormatTS(m.Ts),
 			RawTS:     m.Ts,
+			Subtype:   m.Subtype,
+			BotID:     m.BotID,
 			Reactions: reactions,
 			Files:     files,
 		})

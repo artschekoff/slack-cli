@@ -6,15 +6,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/artschekoff/slack-cli/internal/credentials"
 	"github.com/artschekoff/slack-cli/internal/slack"
-	"golang.org/x/sync/errgroup"
 )
-
-const maxConcurrentUserResolvesCtx = 5
 
 // LoadContextArgs holds all parameters for LoadContextCommand.Run.
 type LoadContextArgs struct {
@@ -58,28 +54,7 @@ func (c *LoadContextCommand) Run(ctx context.Context, args LoadContextArgs) erro
 		return nil
 	}
 
-	userCache := slack.NewUserCache(client)
-	uniqueUsers := ctxCollectUniqueUsers(messages)
-
-	nameMap := make(map[string]string, len(uniqueUsers))
-	var mu sync.Mutex
-
-	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(maxConcurrentUserResolvesCtx)
-	for _, uid := range uniqueUsers {
-		uid := uid
-		g.Go(func() error {
-			name, resolveErr := userCache.Resolve(gCtx, uid)
-			if resolveErr != nil {
-				name = uid
-			}
-			mu.Lock()
-			nameMap[uid] = name
-			mu.Unlock()
-			return nil
-		})
-	}
-	_ = g.Wait()
+	nameMap := resolveUsers(ctx, client, ctxCollectUniqueUsers(messages))
 
 	displayChannel := args.ChannelName
 	if displayChannel == "" {
