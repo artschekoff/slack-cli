@@ -35,4 +35,3 @@ func (c *GetUserCommand) Run(ctx context.Context, workspace, userID string) erro
 	fmt.Fprintf(c.Output, "User %s: %s", userID, name)
 	return nil
 }
-

@@ -77,4 +77,3 @@ func threadFormatReactions(reactions []slack.Reaction) string {
 func threadFormatFiles(files []string) string {
 	return strings.Join(files, ", ")
 }
-

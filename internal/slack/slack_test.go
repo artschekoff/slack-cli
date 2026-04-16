@@ -1419,3 +1419,228 @@ func TestGroupByChannel_PreservesFirstSeenOrder(t *testing.T) {
 	assert.Equal(t, "C001", groups[1].ChannelID)
 	assert.Equal(t, "C002", groups[2].ChannelID)
 }
+
+// --- ListDMs ---
+
+func TestListDMs_Returns1to1AndGroupDMs(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/conversations.list", r.URL.Path)
+		assert.Equal(t, "im,mpim", r.URL.Query().Get("types"))
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"channels": []map[string]any{
+				{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000},
+				{"id": "G001", "name": "mpdm-alice--bob--1", "is_mpim": true, "created": 1700100000},
+			},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+
+	dms, err := client.ListDMs(context.Background(), time.Time{})
+	require.NoError(t, err)
+	require.Len(t, dms, 2)
+
+	assert.Equal(t, "D001", dms[0].ID)
+	assert.Equal(t, "U001", dms[0].UserID)
+	assert.True(t, dms[0].IsIM)
+	assert.Equal(t, int64(1700000000), dms[0].Created)
+
+	assert.Equal(t, "G001", dms[1].ID)
+	assert.Equal(t, "mpdm-alice--bob--1", dms[1].Name)
+	assert.False(t, dms[1].IsIM)
+	assert.Equal(t, int64(1700100000), dms[1].Created)
+}
+
+func TestListDMs_PaginatesThroughPages(t *testing.T) {
+	callCount := 0
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		cursor := r.URL.Query().Get("cursor")
+		if cursor == "" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"channels": []map[string]any{
+					{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000},
+				},
+				"response_metadata": map[string]any{"next_cursor": "page2"},
+			})
+		} else {
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"channels": []map[string]any{
+					{"id": "D002", "user": "U002", "is_im": true, "created": 1700000000},
+				},
+				"response_metadata": map[string]any{"next_cursor": ""},
+			})
+		}
+	}
+
+	client, _ := newTestServer(t, handler)
+
+	dms, err := client.ListDMs(context.Background(), time.Time{})
+	require.NoError(t, err)
+	require.Len(t, dms, 2)
+	assert.Equal(t, 2, callCount)
+	assert.Equal(t, "D001", dms[0].ID)
+	assert.Equal(t, "D002", dms[1].ID)
+}
+
+func TestListDMs_EmptyResult(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok":                true,
+			"channels":          []any{},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+
+	dms, err := client.ListDMs(context.Background(), time.Time{})
+	require.NoError(t, err)
+	assert.Empty(t, dms)
+}
+
+func TestListDMs_UnauthorizedError(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": "invalid_auth"})
+	}
+
+	client, _ := newTestServer(t, handler)
+
+	_, err := client.ListDMs(context.Background(), time.Time{})
+	require.ErrorIs(t, err, slack.ErrUnauthorized)
+}
+
+func TestListDMs_SendsCorrectTypes(t *testing.T) {
+	var capturedTypes string
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		capturedTypes = r.URL.Query().Get("types")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok":                true,
+			"channels":          []any{},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+
+	_, err := client.ListDMs(context.Background(), time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, "im,mpim", capturedTypes,
+		"ListDMs must request im and mpim conversation types")
+}
+
+func TestListDMs_ExcludesArchived(t *testing.T) {
+	var capturedExcludeArchived string
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		capturedExcludeArchived = r.URL.Query().Get("exclude_archived")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok":                true,
+			"channels":          []any{},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+
+	_, err := client.ListDMs(context.Background(), time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", capturedExcludeArchived)
+}
+
+func TestListDMs_StartDateFiltersOlderDMs(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"channels": []map[string]any{
+				{"id": "D001", "user": "U001", "is_im": true, "created": 1705363200}, // 2024-01-16
+				{"id": "D002", "user": "U002", "is_im": true, "created": 1705276800}, // 2024-01-15
+				{"id": "D003", "user": "U003", "is_im": true, "created": 1705190400}, // 2024-01-14
+			},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+
+	dms, err := client.ListDMs(context.Background(), startDate)
+	require.NoError(t, err)
+	require.Len(t, dms, 2, "only DMs created on or after 2024-01-15 should be returned")
+	assert.Equal(t, "D001", dms[0].ID)
+	assert.Equal(t, "D002", dms[1].ID)
+}
+
+func TestListDMs_StartDateZeroReturnsAll(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"channels": []map[string]any{
+				{"id": "D001", "user": "U001", "is_im": true, "created": 1705363200},
+				{"id": "D002", "user": "U002", "is_im": true, "created": 1705190400},
+			},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+
+	dms, err := client.ListDMs(context.Background(), time.Time{})
+	require.NoError(t, err)
+	require.Len(t, dms, 2, "zero startDate should not filter any results")
+}
+
+func TestListDMs_StartDateExactBoundary(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"channels": []map[string]any{
+				{"id": "D001", "user": "U001", "is_im": true, "created": 1705276800}, // exactly 2024-01-15 00:00 UTC
+			},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+
+	dms, err := client.ListDMs(context.Background(), startDate)
+	require.NoError(t, err)
+	require.Len(t, dms, 1, "DM created exactly at startDate boundary must be included")
+}
+
+func TestListDMs_StartDateFiltersMPIMToo(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"channels": []map[string]any{
+				{"id": "D001", "user": "U001", "is_im": true, "created": 1705363200},           // 2024-01-16 — keep
+				{"id": "G001", "name": "mpdm-a--b--1", "is_mpim": true, "created": 1705190400}, // 2024-01-14 — filter out
+			},
+			"response_metadata": map[string]any{"next_cursor": ""},
+		})
+	}
+
+	client, _ := newTestServer(t, handler)
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+
+	dms, err := client.ListDMs(context.Background(), startDate)
+	require.NoError(t, err)
+	require.Len(t, dms, 1, "mpim DMs older than startDate must also be filtered out")
+	assert.Equal(t, "D001", dms[0].ID)
+}

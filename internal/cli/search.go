@@ -83,4 +83,3 @@ func searchIsDigits(s string) bool {
 	}
 	return true
 }
-

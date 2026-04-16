@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	slackAPIBase      = "https://slack.com/api/"
-	defaultTimeout    = 30 * time.Second
-	maxTextLength     = 120
-	maxRetryAfterSec  = 60
-	maxResponseBytes  = 10 << 20 // 10 MB cap to prevent unbounded reads
+	slackAPIBase     = "https://slack.com/api/"
+	defaultTimeout   = 30 * time.Second
+	maxTextLength    = 120
+	maxRetryAfterSec = 60
+	maxResponseBytes = 10 << 20 // 10 MB cap to prevent unbounded reads
 )
 
 // ErrRateLimited is returned when Slack responds with HTTP 429 and a retry also fails,

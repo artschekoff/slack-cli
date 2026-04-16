@@ -24,7 +24,10 @@ slack-cli search acme "deployment failed"
 # 3. List channels matching a pattern
 slack-cli search-channels acme deploy
 
-# 4. Load a thread
+# 4. List recent DMs
+slack-cli list-dms acme --start-from 2024-01-01
+
+# 5. Load a thread
 slack-cli load-thread acme C01234567 1700000000.123456
 ```
 
@@ -51,6 +54,7 @@ slack-cli load-thread acme C01234567 1700000000.123456
 |---|---|---|
 | `slack-cli search <workspace> <query>` | Search messages (`--count`, `--start-from`) | Plain text — results grouped by channel; each entry shows author, timestamp, text, permalink, and `thread_ts` |
 | `slack-cli search-channels <workspace> <pattern>` | List channels whose names contain pattern (case-insensitive; hyphens = spaces) | JSON array of `{id, name, messages}` objects |
+| `slack-cli list-dms <workspace>` | List direct message conversations (`--start-from`) | JSON array of `{id, userId, userName, name, isIm}` objects |
 | `slack-cli load-thread <workspace> <channel-id> <ts>` | Load all messages in a thread | Plain text — each message shows `**UserID** (timestamp): text`, reactions, and file attachments, separated by `---` |
 | `slack-cli load-context <workspace> <channel-id> <ts>` | Load thread as AI-ready markdown (`--permalink`, `--channel-name`, `--search-query`, `--start-from`) | Markdown — header with channel/date/permalink, then each message as a `> **DisplayName** (timestamp): text` block with reactions and attachments |
 | `slack-cli get-user <workspace> <user-id>` | Resolve a Slack user ID to a display name | Plain text — `User <id>: <display name>` |

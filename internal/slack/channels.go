@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // Channel is a Slack channel with its ID and name.
@@ -13,11 +14,23 @@ type Channel struct {
 	Name string
 }
 
+// DM represents a Slack direct message conversation (1:1 im or group mpim).
+type DM struct {
+	ID      string // conversation ID (D… for im, G… for mpim)
+	UserID  string // the other user's ID in a 1:1 DM; empty for group DMs
+	Name    string // auto-generated name for mpim; empty for im
+	IsIM    bool   // true for 1:1 DMs, false for group DMs
+	Created int64  // Unix timestamp of conversation creation
+}
+
 type conversationsListResponse struct {
 	slackBaseResponse
 	Channels []struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		User    string `json:"user"`
+		IsIM    bool   `json:"is_im"`
+		Created int64  `json:"created"`
 	} `json:"channels"`
 	ResponseMetadata responseMetadata `json:"response_metadata"`
 }
@@ -58,6 +71,62 @@ func (c *Client) ListChannels(ctx context.Context) ([]Channel, error) {
 
 		for _, ch := range resp.Channels {
 			all = append(all, Channel{ID: ch.ID, Name: ch.Name})
+		}
+
+		if resp.ResponseMetadata.NextCursor == "" {
+			break
+		}
+		cursor = resp.ResponseMetadata.NextCursor
+	}
+
+	return all, nil
+}
+
+const maxDMPages = 20 // up to 20×200 = 4 000 DM conversations
+
+// ListDMs returns all non-archived direct message conversations (1:1 and group)
+// accessible to the token, paginating through conversations.list until exhausted
+// or maxDMPages is reached. When startDate is non-zero, only conversations created
+// on or after that time are included (client-side filter on the `created` field).
+func (c *Client) ListDMs(ctx context.Context, startDate time.Time) ([]DM, error) {
+	var all []DM
+	cursor := ""
+	threshold := startDate.Unix()
+
+	for page := 0; page < maxDMPages; page++ {
+		params := url.Values{}
+		params.Set("exclude_archived", "true")
+		params.Set("types", "im,mpim")
+		params.Set("limit", "200")
+		if cursor != "" {
+			params.Set("cursor", cursor)
+		}
+
+		body, err := c.get(ctx, "conversations.list", params)
+		if err != nil {
+			return nil, fmt.Errorf("conversations.list request: %w", err)
+		}
+
+		var resp conversationsListResponse
+		if err := unmarshal(body, &resp); err != nil {
+			return nil, err
+		}
+
+		if err := checkResponse(resp.slackBaseResponse); err != nil {
+			return nil, err
+		}
+
+		for _, ch := range resp.Channels {
+			if !startDate.IsZero() && ch.Created < threshold {
+				continue
+			}
+			all = append(all, DM{
+				ID:      ch.ID,
+				UserID:  ch.User,
+				Name:    ch.Name,
+				IsIM:    ch.IsIM,
+				Created: ch.Created,
+			})
 		}
 
 		if resp.ResponseMetadata.NextCursor == "" {

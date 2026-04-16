@@ -236,4 +236,3 @@ func TestRootCmd_Auth_UsesSignalContext(t *testing.T) {
 		"auth command must pass a cancellable context (not context.Background()) so that "+
 			"Ctrl-C during ValidateToken is propagated and the user is not stuck waiting for the HTTP timeout")
 }
-

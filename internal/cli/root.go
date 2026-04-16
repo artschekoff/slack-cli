@@ -54,6 +54,7 @@ Credential management:
 Slack operations:
   slack-cli search <workspace> <query>                  search messages
   slack-cli search-channels <workspace> <pattern>       list channels whose names contain pattern (JSON)
+  slack-cli list-dms <workspace>                        list direct message conversations (JSON)
   slack-cli load-thread <workspace> <ch> <ts>           load a thread
   slack-cli load-context <workspace> <ch> <ts>          load thread as markdown for AI
   slack-cli get-user <workspace> <user-id>              resolve user ID to display name
@@ -73,6 +74,7 @@ Use "slack-cli <command> --help" for flags and examples for each command.`,
 	root.AddCommand(newAuthCompleteCmd(deps))
 	root.AddCommand(newSearchCmd(deps))
 	root.AddCommand(newSearchChannelsCmd(deps))
+	root.AddCommand(newListDMsCmd(deps))
 	root.AddCommand(newLoadThreadCmd(deps))
 	root.AddCommand(newGetUserCmd(deps))
 	root.AddCommand(newLoadContextCmd(deps))
@@ -340,6 +342,41 @@ Examples:
 	}
 	c.Flags().BoolVar(&systemEvents, "system-events", false, "Include system notification messages (channel_join, channel_leave, etc.)")
 	c.Flags().BoolVar(&botMessages, "bot-messages", false, "Include bot and app integration messages")
+	return c
+}
+
+func newListDMsCmd(deps RootDeps) *cobra.Command {
+	var startFrom string
+	c := &cobra.Command{
+		Use:   "list-dms <workspace>",
+		Short: "List direct message conversations with resolved user names (JSON output)",
+		Long: `Lists all accessible Slack direct message conversations (1:1 and group DMs)
+and writes a JSON array of {id, userId, userName, name, isIm} objects to stdout.
+
+For 1:1 DMs, user IDs are resolved to display names. Group DMs (mpim) include
+the auto-generated conversation name.
+
+Flags:
+  --start-from  Only include DMs created on or after this date (YYYY-MM-DD)
+
+Examples:
+  slack-cli list-dms acme
+  slack-cli list-dms acme --start-from 2024-01-01`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			sf, err := ParseStartFrom(startFrom)
+			if err != nil {
+				return err
+			}
+			cmd := &ListDMsCommand{
+				Store:         deps.Store,
+				Output:        deps.Output,
+				ClientFactory: deps.ClientFactory,
+			}
+			return cmd.Run(cobraCmd.Context(), args[0], sf)
+		},
+	}
+	c.Flags().StringVar(&startFrom, "start-from", "", "Only include DMs created on or after this date (YYYY-MM-DD)")
 	return c
 }
 

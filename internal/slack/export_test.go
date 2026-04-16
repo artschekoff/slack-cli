@@ -28,4 +28,3 @@ var TsOnOrAfter = tsOnOrAfter
 
 // TimeToSlackTS exports timeToSlackTS for white-box testing.
 var TimeToSlackTS = timeToSlackTS
-

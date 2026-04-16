@@ -118,4 +118,3 @@ func ctxFormatMessageText(text string) string {
 	lines := strings.Split(text, "\n")
 	return strings.Join(lines, "\n> ")
 }
-

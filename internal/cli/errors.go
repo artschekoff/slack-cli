@@ -8,11 +8,11 @@ import (
 // Sentinel errors returned by CLI commands.
 // MCP handlers use errors.Is against these to map to user-safe messages.
 var (
-	ErrUnauthorized       = errors.New("credentials expired")
-	ErrNoChannelAccess    = errors.New("no channel access")
-	ErrSlackSearch        = errors.New("search failed")
-	ErrSlackLoadThread    = errors.New("failed to load thread")
-	ErrSlackGetUser       = errors.New("failed to get user info")
+	ErrUnauthorized        = errors.New("credentials expired")
+	ErrNoChannelAccess     = errors.New("no channel access")
+	ErrSlackSearch         = errors.New("search failed")
+	ErrSlackLoadThread     = errors.New("failed to load thread")
+	ErrSlackGetUser        = errors.New("failed to get user info")
 	ErrCredentialsNotFound = errors.New("credentials not found")
 )
 

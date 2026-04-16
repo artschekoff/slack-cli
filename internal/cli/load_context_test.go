@@ -23,8 +23,10 @@ func newContextTestServer(t *testing.T) *httptest.Server {
 				"ok": true,
 				"messages": []map[string]any{
 					{"user": "U001", "text": "initial message", "ts": "1700000001.000001"},
-					{"user": "U002", "text": "a reply", "ts": "1700000002.000002",
-						"reactions": []map[string]any{{"name": "tada", "count": 2}}},
+					{
+						"user": "U002", "text": "a reply", "ts": "1700000002.000002",
+						"reactions": []map[string]any{{"name": "tada", "count": 2}},
+					},
 				},
 			})
 		case "/users.info":
