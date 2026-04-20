@@ -347,6 +347,7 @@ Examples:
 
 func newListDMsCmd(deps RootDeps) *cobra.Command {
 	var startFrom string
+	var withMessages bool
 	c := &cobra.Command{
 		Use:   "list-dms <workspace>",
 		Short: "List direct message conversations with resolved user names (JSON output)",
@@ -357,11 +358,13 @@ For 1:1 DMs, user IDs are resolved to display names. Group DMs (mpim) include
 the auto-generated conversation name.
 
 Flags:
-  --start-from  Only include DMs created on or after this date (YYYY-MM-DD)
+  --start-from     Only include DMs created on or after this date (YYYY-MM-DD)
+  --with-messages  Include the latest message for each DM conversation
 
 Examples:
   slack-cli list-dms acme
-  slack-cli list-dms acme --start-from 2024-01-01`,
+  slack-cli list-dms acme --start-from 2024-01-01
+  slack-cli list-dms acme --with-messages`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			sf, err := ParseStartFrom(startFrom)
@@ -372,11 +375,13 @@ Examples:
 				Store:         deps.Store,
 				Output:        deps.Output,
 				ClientFactory: deps.ClientFactory,
+				WithMessages:  withMessages,
 			}
 			return cmd.Run(cobraCmd.Context(), args[0], sf)
 		},
 	}
 	c.Flags().StringVar(&startFrom, "start-from", "", "Only include DMs created on or after this date (YYYY-MM-DD)")
+	c.Flags().BoolVar(&withMessages, "with-messages", false, "Include the latest message for each DM conversation")
 	return c
 }
 

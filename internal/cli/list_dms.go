@@ -16,11 +16,19 @@ import (
 
 // dmResult is one entry in the JSON output of list-dms.
 type dmResult struct {
-	ID       string `json:"id"`
-	UserID   string `json:"userId,omitempty"`
-	UserName string `json:"userName,omitempty"`
-	Name     string `json:"name,omitempty"`
-	IsIM     bool   `json:"isIm"`
+	ID          string     `json:"id"`
+	UserID      string     `json:"userId,omitempty"`
+	UserName    string     `json:"userName,omitempty"`
+	Name        string     `json:"name,omitempty"`
+	IsIM        bool       `json:"isIm"`
+	LastMessage *dmMessage `json:"lastMessage,omitempty"`
+}
+
+// dmMessage is the latest message in a DM, included when --with-messages is set.
+type dmMessage struct {
+	UserID    string `json:"userId"`
+	Text      string `json:"text"`
+	Timestamp string `json:"timestamp"`
 }
 
 // ListDMsCommand lists Slack direct message conversations (1:1 and group DMs)
@@ -29,6 +37,7 @@ type ListDMsCommand struct {
 	Store         *credentials.Store
 	Output        io.Writer
 	ClientFactory ClientFactory
+	WithMessages  bool
 }
 
 // Run fetches DM conversations via conversations.list, resolves user IDs for
@@ -50,6 +59,11 @@ func (c *ListDMsCommand) Run(ctx context.Context, workspace string, startFrom ti
 
 	nameMap := resolveDMUsers(ctx, client, dms)
 
+	var msgMap map[string]*dmMessage
+	if c.WithMessages {
+		msgMap = fetchLatestMessages(ctx, client, dms)
+	}
+
 	results := make([]dmResult, 0, len(dms))
 	for _, dm := range dms {
 		r := dmResult{
@@ -66,10 +80,43 @@ func (c *ListDMsCommand) Run(ctx context.Context, workspace string, startFrom ti
 		} else {
 			r.Name = dm.Name
 		}
+		if msgMap != nil {
+			r.LastMessage = msgMap[dm.ID]
+		}
 		results = append(results, r)
 	}
 
 	return json.NewEncoder(c.Output).Encode(results)
+}
+
+const maxConcurrentMessageFetches = 10
+
+// fetchLatestMessages fetches the most recent message for each DM concurrently.
+func fetchLatestMessages(ctx context.Context, client *slack.Client, dms []slack.DM) map[string]*dmMessage {
+	result := make(map[string]*dmMessage, len(dms))
+	var mu sync.Mutex
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(maxConcurrentMessageFetches)
+	for _, dm := range dms {
+		g.Go(func() error {
+			msgs, _, err := client.GetChannelMessages(gCtx, dm.ID, 1)
+			if err != nil || len(msgs) == 0 {
+				return nil
+			}
+			m := msgs[0]
+			mu.Lock()
+			result[dm.ID] = &dmMessage{
+				UserID:    m.UserID,
+				Text:      m.Text,
+				Timestamp: m.Timestamp,
+			}
+			mu.Unlock()
+			return nil
+		})
+	}
+	_ = g.Wait()
+	return result
 }
 
 // resolveDMUsers resolves the unique set of user IDs from 1:1 DMs to display names.
