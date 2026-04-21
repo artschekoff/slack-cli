@@ -277,7 +277,7 @@ func TestListDMs_SystemEventsIncludesBotMessages(t *testing.T) {
 	assert.Contains(t, results[0].LastMessage.Text, "joined Slack", "bot message must be included when --system-events is set")
 }
 
-func TestListDMs_AllSystemMessagesReturnsNil(t *testing.T) {
+func TestListDMs_AllSystemMessagesExcludesDM(t *testing.T) {
 	srv := newSlackTestServer(t, map[string]any{
 		"conversations.list": dmListResponse([]map[string]any{
 			{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000},
@@ -302,8 +302,7 @@ func TestListDMs_AllSystemMessagesReturnsNil(t *testing.T) {
 	require.NoError(t, cmd.Run(context.Background(), "acme", time.Time{}))
 
 	results := decodeDMResults(t, &out)
-	require.Len(t, results, 1)
-	assert.Nil(t, results[0].LastMessage, "no lastMessage when all messages are system/bot")
+	assert.Empty(t, results, "DM with only system/bot messages should be excluded")
 }
 
 // TestListDMs_WithMessagesFiltersWorkspaceJoinMessages asserts that the
@@ -450,6 +449,91 @@ func TestListDMs_WithMessagesFiltersJoinedSlackWithClientMsgID(t *testing.T) {
 	require.NotNil(t, results[0].LastMessage)
 	assert.Equal(t, "hey there!", results[0].LastMessage.Text,
 		"joined-Slack message with client_msg_id must be filtered by default")
+}
+
+func TestListDMs_WithMessages_ExcludesEmptyHistory(t *testing.T) {
+	srv := newSlackTestServer(t, map[string]any{
+		"conversations.list": dmListResponse([]map[string]any{
+			{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000},
+			{"id": "D002", "user": "U002", "is_im": true, "created": 1700000000},
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{}),
+		"users.info": map[string]any{
+			"ok":   true,
+			"user": map[string]any{"real_name": "Someone", "name": "someone"},
+		},
+	})
+
+	store := storeWithCredsForCLI(t, "acme", "xoxc-test", "xoxd-test")
+	var out bytes.Buffer
+	cmd := &ListDMsCommand{
+		Store: store, Output: &out, ClientFactory: newTestClientFactory(t, srv),
+		WithMessages: true,
+	}
+
+	require.NoError(t, cmd.Run(context.Background(), "acme", time.Time{}))
+
+	results := decodeDMResults(t, &out)
+	assert.Empty(t, results, "DMs with empty message history should be excluded when --with-messages is set")
+}
+
+func TestListDMs_WithMessages_ExcludesAllSystemOnly(t *testing.T) {
+	srv := newSlackTestServer(t, map[string]any{
+		"conversations.list": dmListResponse([]map[string]any{
+			{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000},
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{
+			{"text": "Artem joined Slack — take a second to say hello.", "ts": "1700000002.000001", "bot_id": "B001"},
+			{"user": "U001", "text": "U001 joined the channel", "ts": "1700000001.000001", "subtype": "channel_join"},
+		}),
+		"users.info": map[string]any{
+			"ok":   true,
+			"user": map[string]any{"real_name": "Alice Smith", "name": "alice"},
+		},
+	})
+
+	store := storeWithCredsForCLI(t, "acme", "xoxc-test", "xoxd-test")
+	var out bytes.Buffer
+	cmd := &ListDMsCommand{
+		Store: store, Output: &out, ClientFactory: newTestClientFactory(t, srv),
+		WithMessages: true,
+	}
+
+	require.NoError(t, cmd.Run(context.Background(), "acme", time.Time{}))
+
+	results := decodeDMResults(t, &out)
+	assert.Empty(t, results, "DMs with only system/bot messages should be excluded when --with-messages is set")
+}
+
+func TestListDMs_WithMessages_KeepsDMsWithRealMessages(t *testing.T) {
+	srv := newSlackTestServer(t, map[string]any{
+		"conversations.list": dmListResponse([]map[string]any{
+			{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000},
+			{"id": "D002", "user": "U002", "is_im": true, "created": 1700000000},
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{
+			{"user": "U001", "text": "hey there!", "ts": "1700000001.000001", "client_msg_id": "msg-001"},
+		}),
+		"users.info": map[string]any{
+			"ok":   true,
+			"user": map[string]any{"real_name": "Someone", "name": "someone"},
+		},
+	})
+
+	store := storeWithCredsForCLI(t, "acme", "xoxc-test", "xoxd-test")
+	var out bytes.Buffer
+	cmd := &ListDMsCommand{
+		Store: store, Output: &out, ClientFactory: newTestClientFactory(t, srv),
+		WithMessages: true,
+	}
+
+	require.NoError(t, cmd.Run(context.Background(), "acme", time.Time{}))
+
+	results := decodeDMResults(t, &out)
+	require.Len(t, results, 2, "DMs with real messages should be kept")
+	for _, r := range results {
+		require.NotNil(t, r.LastMessage, "each kept DM should have a lastMessage")
+	}
 }
 
 func TestListDMs_StartFromZeroReturnsAll(t *testing.T) {

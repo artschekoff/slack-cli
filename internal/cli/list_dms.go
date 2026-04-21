@@ -67,6 +67,9 @@ func (c *ListDMsCommand) Run(ctx context.Context, workspace string, startFrom ti
 
 	results := make([]dmResult, 0, len(dms))
 	for _, dm := range dms {
+		if msgMap != nil && msgMap[dm.ID] == nil {
+			continue
+		}
 		r := dmResult{
 			ID:   dm.ID,
 			IsIM: dm.IsIM,
