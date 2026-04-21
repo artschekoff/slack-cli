@@ -1320,6 +1320,54 @@ func TestGetThreadReplies_WithStartFrom_HistoryKeepsThreadTS_WhenLater(t *testin
 		"when startFrom < threadTS, history should keep threadTS as oldest")
 }
 
+// --- IsWorkspaceJoinIntro ---
+
+func TestMessage_IsWorkspaceJoinIntro(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  slack.Message
+		want bool
+	}{
+		{
+			name: "standard workspace-join intro",
+			msg:  slack.Message{UserID: "U001", Text: "Alice Smith joined Slack — take a second to say hello."},
+			want: true,
+		},
+		{
+			name: "workspace-join intro with client_msg_id",
+			msg:  slack.Message{UserID: "U001", Text: "Alice Smith joined Slack — take a second to say hello.", ClientMsgID: "deadbeef"},
+			want: true,
+		},
+		{
+			name: "regular user message",
+			msg:  slack.Message{UserID: "U001", Text: "hey there!", ClientMsgID: "abc-123"},
+			want: false,
+		},
+		{
+			name: "partial match should not trigger",
+			msg:  slack.Message{UserID: "U001", Text: "I just joined Slack"},
+			want: false,
+		},
+		{
+			name: "empty text",
+			msg:  slack.Message{UserID: "U001", Text: ""},
+			want: false,
+		},
+		{
+			name: "message mentioning joined Slack in conversation",
+			msg:  slack.Message{UserID: "U001", Text: "When I joined Slack it was great", ClientMsgID: "abc"},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.msg.IsWorkspaceJoinIntro()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // --- tsOnOrAfter helper ---
 
 func TestTsOnOrAfter(t *testing.T) {

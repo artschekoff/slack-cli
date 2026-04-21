@@ -347,7 +347,7 @@ Examples:
 
 func newListDMsCmd(deps RootDeps) *cobra.Command {
 	var startFrom string
-	var withMessages bool
+	var withMessages, systemEvents bool
 	c := &cobra.Command{
 		Use:   "list-dms <workspace>",
 		Short: "List direct message conversations with resolved user names (JSON output)",
@@ -357,14 +357,21 @@ and writes a JSON array of {id, userId, userName, name, isIm} objects to stdout.
 For 1:1 DMs, user IDs are resolved to display names. Group DMs (mpim) include
 the auto-generated conversation name.
 
+When --with-messages is set, the latest message for each DM is included. By
+default, system notifications and bot messages (e.g. "X joined Slack") are
+filtered out so only user-authored messages are shown. Pass --system-events to
+include them.
+
 Flags:
-  --start-from     Only include DMs created on or after this date (YYYY-MM-DD)
-  --with-messages  Include the latest message for each DM conversation
+  --start-from      Only include DMs created on or after this date (YYYY-MM-DD)
+  --with-messages   Include the latest message for each DM conversation
+  --system-events   Include system/bot messages (e.g. "joined Slack" notifications)
 
 Examples:
   slack-cli list-dms acme
   slack-cli list-dms acme --start-from 2024-01-01
-  slack-cli list-dms acme --with-messages`,
+  slack-cli list-dms acme --with-messages
+  slack-cli list-dms acme --with-messages --system-events`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			sf, err := ParseStartFrom(startFrom)
@@ -376,12 +383,14 @@ Examples:
 				Output:        deps.Output,
 				ClientFactory: deps.ClientFactory,
 				WithMessages:  withMessages,
+				SystemEvents:  systemEvents,
 			}
 			return cmd.Run(cobraCmd.Context(), args[0], sf)
 		},
 	}
 	c.Flags().StringVar(&startFrom, "start-from", "", "Only include DMs created on or after this date (YYYY-MM-DD)")
 	c.Flags().BoolVar(&withMessages, "with-messages", false, "Include the latest message for each DM conversation")
+	c.Flags().BoolVar(&systemEvents, "system-events", false, "Include system/bot messages (e.g. \"joined Slack\" notifications)")
 	return c
 }
 
