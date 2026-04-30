@@ -160,12 +160,15 @@ func TestListDMs_WorkspaceNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "no credentials found")
 }
 
-func TestListDMs_StartFromFiltersOlderDMs(t *testing.T) {
+// TestListDMs_StartFromIncludesDMWithRecentMessage verifies that a DM with an
+// old creation date but a recent message passes the --start-from filter.
+func TestListDMs_StartFromIncludesDMWithRecentMessage(t *testing.T) {
 	srv := newSlackTestServer(t, map[string]any{
 		"conversations.list": dmListResponse([]map[string]any{
-			{"id": "D001", "user": "U001", "is_im": true, "created": 1705363200}, // 2024-01-16
-			{"id": "D002", "user": "U002", "is_im": true, "created": 1705276800}, // 2024-01-15
-			{"id": "D003", "user": "U003", "is_im": true, "created": 1705190400}, // 2024-01-14
+			{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000}, // old creation date
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{
+			{"user": "U001", "text": "recent!", "ts": "1705363200.000001", "client_msg_id": "m1"}, // 2024-01-16 ≥ threshold
 		}),
 		"users.info": map[string]any{
 			"ok":   true,
@@ -181,9 +184,36 @@ func TestListDMs_StartFromFiltersOlderDMs(t *testing.T) {
 	require.NoError(t, cmd.Run(context.Background(), "acme", startFrom))
 
 	results := decodeDMResults(t, &out)
-	require.Len(t, results, 2, "only DMs created on or after 2024-01-15 should be returned")
+	require.Len(t, results, 1, "DM with message on or after startFrom must be included despite old created date")
 	assert.Equal(t, "D001", results[0].ID)
-	assert.Equal(t, "D002", results[1].ID)
+	assert.Nil(t, results[0].LastMessage, "--with-messages not set so message data must be absent")
+}
+
+// TestListDMs_StartFromExcludesDMWithOldMessage verifies that a DM whose last
+// message predates --start-from is excluded from the result.
+func TestListDMs_StartFromExcludesDMWithOldMessage(t *testing.T) {
+	srv := newSlackTestServer(t, map[string]any{
+		"conversations.list": dmListResponse([]map[string]any{
+			{"id": "D001", "user": "U001", "is_im": true, "created": 1700000000},
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{
+			{"user": "U001", "text": "old msg", "ts": "1705190400.000001", "client_msg_id": "m1"}, // 2024-01-14 < threshold
+		}),
+		"users.info": map[string]any{
+			"ok":   true,
+			"user": map[string]any{"real_name": "Someone", "name": "someone"},
+		},
+	})
+
+	store := storeWithCredsForCLI(t, "acme", "xoxc-test", "xoxd-test")
+	var out bytes.Buffer
+	cmd := &ListDMsCommand{Store: store, Output: &out, ClientFactory: newTestClientFactory(t, srv)}
+
+	startFrom := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, cmd.Run(context.Background(), "acme", startFrom))
+
+	results := decodeDMResults(t, &out)
+	assert.Empty(t, results, "DM whose last message is before startFrom must be excluded")
 }
 
 func TestListDMs_WithMessagesFiltersBotMessages(t *testing.T) {

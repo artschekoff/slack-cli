@@ -388,7 +388,7 @@ Examples:
 			return cmd.Run(cobraCmd.Context(), args[0], sf)
 		},
 	}
-	c.Flags().StringVar(&startFrom, "start-from", "", "Only include DMs created on or after this date (YYYY-MM-DD)")
+	c.Flags().StringVar(&startFrom, "start-from", "", "Only include DMs with activity on or after this date (YYYY-MM-DD)")
 	c.Flags().BoolVar(&withMessages, "with-messages", false, "Include the latest message for each DM conversation")
 	c.Flags().BoolVar(&systemEvents, "system-events", false, "Include system/bot messages (e.g. \"joined Slack\" notifications)")
 	return c

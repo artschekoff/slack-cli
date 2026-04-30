@@ -1488,7 +1488,7 @@ func TestListDMs_Returns1to1AndGroupDMs(t *testing.T) {
 
 	client, _ := newTestServer(t, handler)
 
-	dms, err := client.ListDMs(context.Background(), time.Time{})
+	dms, err := client.ListDMs(context.Background())
 	require.NoError(t, err)
 	require.Len(t, dms, 2)
 
@@ -1531,7 +1531,7 @@ func TestListDMs_PaginatesThroughPages(t *testing.T) {
 
 	client, _ := newTestServer(t, handler)
 
-	dms, err := client.ListDMs(context.Background(), time.Time{})
+	dms, err := client.ListDMs(context.Background())
 	require.NoError(t, err)
 	require.Len(t, dms, 2)
 	assert.Equal(t, 2, callCount)
@@ -1551,7 +1551,7 @@ func TestListDMs_EmptyResult(t *testing.T) {
 
 	client, _ := newTestServer(t, handler)
 
-	dms, err := client.ListDMs(context.Background(), time.Time{})
+	dms, err := client.ListDMs(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, dms)
 }
@@ -1564,7 +1564,7 @@ func TestListDMs_UnauthorizedError(t *testing.T) {
 
 	client, _ := newTestServer(t, handler)
 
-	_, err := client.ListDMs(context.Background(), time.Time{})
+	_, err := client.ListDMs(context.Background())
 	require.ErrorIs(t, err, slack.ErrUnauthorized)
 }
 
@@ -1582,7 +1582,7 @@ func TestListDMs_SendsCorrectTypes(t *testing.T) {
 
 	client, _ := newTestServer(t, handler)
 
-	_, err := client.ListDMs(context.Background(), time.Time{})
+	_, err := client.ListDMs(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "im,mpim", capturedTypes,
 		"ListDMs must request im and mpim conversation types")
@@ -1602,12 +1602,12 @@ func TestListDMs_ExcludesArchived(t *testing.T) {
 
 	client, _ := newTestServer(t, handler)
 
-	_, err := client.ListDMs(context.Background(), time.Time{})
+	_, err := client.ListDMs(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "true", capturedExcludeArchived)
 }
 
-func TestListDMs_StartDateFiltersOlderDMs(t *testing.T) {
+func TestListDMs_ReturnsAllDMsRegardlessOfCreatedDate(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -1622,73 +1622,8 @@ func TestListDMs_StartDateFiltersOlderDMs(t *testing.T) {
 	}
 
 	client, _ := newTestServer(t, handler)
-	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 
-	dms, err := client.ListDMs(context.Background(), startDate)
+	dms, err := client.ListDMs(context.Background())
 	require.NoError(t, err)
-	require.Len(t, dms, 2, "only DMs created on or after 2024-01-15 should be returned")
-	assert.Equal(t, "D001", dms[0].ID)
-	assert.Equal(t, "D002", dms[1].ID)
-}
-
-func TestListDMs_StartDateZeroReturnsAll(t *testing.T) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"ok": true,
-			"channels": []map[string]any{
-				{"id": "D001", "user": "U001", "is_im": true, "created": 1705363200},
-				{"id": "D002", "user": "U002", "is_im": true, "created": 1705190400},
-			},
-			"response_metadata": map[string]any{"next_cursor": ""},
-		})
-	}
-
-	client, _ := newTestServer(t, handler)
-
-	dms, err := client.ListDMs(context.Background(), time.Time{})
-	require.NoError(t, err)
-	require.Len(t, dms, 2, "zero startDate should not filter any results")
-}
-
-func TestListDMs_StartDateExactBoundary(t *testing.T) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"ok": true,
-			"channels": []map[string]any{
-				{"id": "D001", "user": "U001", "is_im": true, "created": 1705276800}, // exactly 2024-01-15 00:00 UTC
-			},
-			"response_metadata": map[string]any{"next_cursor": ""},
-		})
-	}
-
-	client, _ := newTestServer(t, handler)
-	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
-
-	dms, err := client.ListDMs(context.Background(), startDate)
-	require.NoError(t, err)
-	require.Len(t, dms, 1, "DM created exactly at startDate boundary must be included")
-}
-
-func TestListDMs_StartDateFiltersMPIMToo(t *testing.T) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"ok": true,
-			"channels": []map[string]any{
-				{"id": "D001", "user": "U001", "is_im": true, "created": 1705363200},           // 2024-01-16 — keep
-				{"id": "G001", "name": "mpdm-a--b--1", "is_mpim": true, "created": 1705190400}, // 2024-01-14 — filter out
-			},
-			"response_metadata": map[string]any{"next_cursor": ""},
-		})
-	}
-
-	client, _ := newTestServer(t, handler)
-	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
-
-	dms, err := client.ListDMs(context.Background(), startDate)
-	require.NoError(t, err)
-	require.Len(t, dms, 1, "mpim DMs older than startDate must also be filtered out")
-	assert.Equal(t, "D001", dms[0].ID)
+	require.Len(t, dms, 3, "ListDMs returns all DMs; date filtering happens in the CLI layer")
 }

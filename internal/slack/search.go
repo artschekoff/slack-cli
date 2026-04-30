@@ -127,6 +127,10 @@ func tsOnOrAfter(ts string, thresholdUnix int64) bool {
 	return sec >= thresholdUnix
 }
 
+// TsUnixSec extracts the integer seconds from a Slack timestamp ("1700000000.123456" → 1700000000).
+// Returns 0 if the timestamp cannot be parsed.
+func TsUnixSec(ts string) int64 { return tsUnixSec(ts) }
+
 // tsUnixSec extracts the integer seconds from a Slack timestamp ("1700000000.123456" → 1700000000).
 func tsUnixSec(ts string) int64 {
 	dotIdx := indexOf(ts, '.')

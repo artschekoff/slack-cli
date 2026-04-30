@@ -108,6 +108,25 @@ type conversationMessage struct {
 	Files []struct {
 		Name string `json:"name"`
 	} `json:"files"`
+	// Blocks contains rich-text content; Slack sometimes omits `text` and puts
+	// the actual message content only in blocks[].elements[].elements[].text.
+	Blocks []struct {
+		Type     string `json:"type"`
+		Elements []struct {
+			Type     string `json:"type"`
+			Elements []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"elements"`
+		} `json:"elements"`
+	} `json:"blocks"`
+	// Attachments (legacy Slack format) may contain the message text when
+	// the top-level text field is empty.
+	Attachments []struct {
+		Fallback string `json:"fallback"`
+		Text     string `json:"text"`
+		Title    string `json:"title"`
+	} `json:"attachments"`
 }
 
 // maxPages caps the number of cursor-paginated requests per call.
@@ -230,9 +249,33 @@ func timeToSlackTS(t time.Time) string {
 	return fmt.Sprintf("%d.000000", t.Unix())
 }
 
+// resolveText returns the best available user-typed text for a Slack message.
+// It falls back from the top-level text field → rich-text blocks.
+// Legacy attachments are intentionally excluded: they typically contain
+// auto-generated link previews (unfurls), not user-authored content.
+func resolveText(m conversationMessage) string {
+	if m.Text != "" {
+		return m.Text
+	}
+	// Rich-text blocks
+	var b strings.Builder
+	for _, block := range m.Blocks {
+		for _, el := range block.Elements {
+			for _, leaf := range el.Elements {
+				if leaf.Type == "text" && leaf.Text != "" {
+					b.WriteString(leaf.Text)
+				}
+			}
+		}
+	}
+	return b.String()
+}
+
 func convertMessages(raw []conversationMessage) []Message {
 	msgs := make([]Message, 0, len(raw))
 	for _, m := range raw {
+		text := resolveText(m)
+
 		reactions := make([]Reaction, 0, len(m.Reactions))
 		for _, r := range m.Reactions {
 			reactions = append(reactions, Reaction{Name: r.Name, Count: r.Count})
@@ -245,7 +288,7 @@ func convertMessages(raw []conversationMessage) []Message {
 
 		msgs = append(msgs, Message{
 			UserID:      m.User,
-			Text:        m.Text,
+			Text:        text,
 			Timestamp:   FormatTS(m.Ts),
 			RawTS:       m.Ts,
 			Subtype:     m.Subtype,

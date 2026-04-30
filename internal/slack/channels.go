@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
-	"time"
 )
 
 // Channel is a Slack channel with its ID and name.
@@ -86,12 +85,10 @@ const maxDMPages = 20 // up to 20×200 = 4 000 DM conversations
 
 // ListDMs returns all non-archived direct message conversations (1:1 and group)
 // accessible to the token, paginating through conversations.list until exhausted
-// or maxDMPages is reached. When startDate is non-zero, only conversations created
-// on or after that time are included (client-side filter on the `created` field).
-func (c *Client) ListDMs(ctx context.Context, startDate time.Time) ([]DM, error) {
+// or maxDMPages is reached.
+func (c *Client) ListDMs(ctx context.Context) ([]DM, error) {
 	var all []DM
 	cursor := ""
-	threshold := startDate.Unix()
 
 	for page := 0; page < maxDMPages; page++ {
 		params := url.Values{}
@@ -117,9 +114,6 @@ func (c *Client) ListDMs(ctx context.Context, startDate time.Time) ([]DM, error)
 		}
 
 		for _, ch := range resp.Channels {
-			if !startDate.IsZero() && ch.Created < threshold {
-				continue
-			}
 			all = append(all, DM{
 				ID:      ch.ID,
 				UserID:  ch.User,
