@@ -18,6 +18,8 @@ type Message struct {
 	Subtype     string // empty for regular messages; e.g. "channel_join", "bot_message"
 	BotID       string // non-empty for app/bot messages that omit the "bot_message" subtype
 	ClientMsgID string // non-empty UUID for every user-typed message; absent on auto-generated messages
+	ThreadTS    string // non-empty when message belongs to or starts a thread
+	ReplyCount  int    // number of replies in the thread; >0 only on the parent message
 	Reactions   []Reaction
 	Files       []string
 }
@@ -101,6 +103,8 @@ type conversationMessage struct {
 	Subtype     string `json:"subtype"`
 	BotID       string `json:"bot_id"`
 	ClientMsgID string `json:"client_msg_id"`
+	ThreadTS    string `json:"thread_ts"`
+	ReplyCount  int    `json:"reply_count"`
 	Reactions   []struct {
 		Name  string `json:"name"`
 		Count int    `json:"count"`
@@ -294,6 +298,8 @@ func convertMessages(raw []conversationMessage) []Message {
 			Subtype:     m.Subtype,
 			BotID:       m.BotID,
 			ClientMsgID: m.ClientMsgID,
+			ThreadTS:    m.ThreadTS,
+			ReplyCount:  m.ReplyCount,
 			Reactions:   reactions,
 			Files:       files,
 		})

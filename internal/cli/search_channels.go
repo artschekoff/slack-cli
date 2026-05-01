@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/artschekoff/slack-cli/internal/credentials"
 	"github.com/artschekoff/slack-cli/internal/slack"
@@ -20,10 +21,12 @@ const (
 )
 
 // messageResult is one message inside a channelResult.
+// Replies contains direct thread replies nested under this message.
 type messageResult struct {
-	User      string `json:"user"`
-	Text      string `json:"text"`
-	Timestamp string `json:"timestamp"`
+	User      string          `json:"user"`
+	Text      string          `json:"text"`
+	Timestamp string          `json:"timestamp"`
+	Replies   []messageResult `json:"replies,omitempty"`
 }
 
 // channelResult is one channel in the JSON output of search-channels,
@@ -53,6 +56,7 @@ type SearchChannelsCommand struct {
 type matchedChannel struct {
 	ch        slack.Channel
 	messages  []slack.Message
+	replies   map[string][]slack.Message // threadTS → replies (parent excluded)
 	truncated bool
 }
 
@@ -111,6 +115,52 @@ func (c *SearchChannelsCommand) Run(ctx context.Context, workspace, namePattern 
 		return err
 	}
 
+	// Fetch thread replies for every top-level message that has them.
+	// Replies are stored per channel keyed by thread_ts; the parent message
+	// (always first in conversations.replies) is excluded from the slice.
+	g2, g2Ctx := errgroup.WithContext(ctx)
+	g2.SetLimit(maxConcurrentChannelFetches)
+	var repliesMu sync.Mutex
+	type replyKey struct{ chanIdx int; threadTS string }
+	allReplies := make(map[replyKey][]slack.Message)
+	for i, m := range matched {
+		for _, msg := range m.messages {
+			if msg.ReplyCount == 0 {
+				continue
+			}
+			chIdx := i
+			threadTS := msg.RawTS
+			chID := m.ch.ID
+			g2.Go(func() error {
+				replies, _, repErr := client.GetThreadReplies(g2Ctx, chID, threadTS, time.Time{})
+				if repErr != nil {
+					return nil // best-effort: skip unreachable threads
+				}
+				// conversations.replies always returns the parent as the first item;
+				// strip it so only the child replies remain.
+				if len(replies) > 1 {
+					replies = replies[1:]
+				} else {
+					replies = nil
+				}
+				repliesMu.Lock()
+				allReplies[replyKey{chIdx, threadTS}] = replies
+				repliesMu.Unlock()
+				return nil
+			})
+		}
+	}
+	if err := g2.Wait(); err != nil {
+		return err
+	}
+	for k, v := range allReplies {
+		m := &matched[k.chanIdx]
+		if m.replies == nil {
+			m.replies = make(map[string][]slack.Message)
+		}
+		m.replies[k.threadTS] = v
+	}
+
 	// nameMap may be nil when no messages have user IDs; reading a nil map returns
 	// "" without panicking, so the fallback below handles it correctly.
 	nameMap := resolveUsers(ctx, client, collectUserIDs(matched))
@@ -129,11 +179,29 @@ func (c *SearchChannelsCommand) Run(ctx context.Context, workspace, namePattern 
 			if user == "" {
 				user = msg.UserID
 			}
-			msgResults = append(msgResults, messageResult{
+			mr := messageResult{
 				User:      user,
 				Text:      msg.Text,
 				Timestamp: msg.Timestamp,
-			})
+			}
+			for _, reply := range m.replies[msg.RawTS] {
+				if !c.SystemEvents && reply.IsSystemMessage() {
+					continue
+				}
+				if !c.BotMessages && reply.IsBotMessage() {
+					continue
+				}
+				replyUser := nameMap[reply.UserID]
+				if replyUser == "" {
+					replyUser = reply.UserID
+				}
+				mr.Replies = append(mr.Replies, messageResult{
+					User:      replyUser,
+					Text:      reply.Text,
+					Timestamp: reply.Timestamp,
+				})
+			}
+			msgResults = append(msgResults, mr)
 		}
 		results = append(results, channelResult{
 			ID:        m.ch.ID,
@@ -147,18 +215,26 @@ func (c *SearchChannelsCommand) Run(ctx context.Context, workspace, namePattern 
 }
 
 // collectUserIDs returns the deduplicated set of non-empty user IDs found across
-// all messages in matched, preserving first-seen order.
+// all messages and their thread replies in matched, preserving first-seen order.
 func collectUserIDs(matched []matchedChannel) []string {
 	seen := make(map[string]struct{})
 	var uids []string
+	add := func(uid string) {
+		if uid == "" {
+			return
+		}
+		if _, ok := seen[uid]; !ok {
+			seen[uid] = struct{}{}
+			uids = append(uids, uid)
+		}
+	}
 	for _, m := range matched {
 		for _, msg := range m.messages {
-			if msg.UserID == "" {
-				continue
-			}
-			if _, ok := seen[msg.UserID]; !ok {
-				seen[msg.UserID] = struct{}{}
-				uids = append(uids, msg.UserID)
+			add(msg.UserID)
+		}
+		for _, replies := range m.replies {
+			for _, reply := range replies {
+				add(reply.UserID)
 			}
 		}
 	}

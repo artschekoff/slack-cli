@@ -335,6 +335,121 @@ func TestSearchChannels_SystemMessagesIncludedWithFlag(t *testing.T) {
 	assert.Len(t, results[0].Messages, 2, "system messages must be included in verbose mode")
 }
 
+// threadRepliesResponse builds a conversations.replies API stub payload
+// containing the parent message followed by reply messages.
+func threadRepliesResponse(messages []map[string]any) map[string]any {
+	return map[string]any{
+		"ok":                true,
+		"messages":          messages,
+		"has_more":          false,
+		"response_metadata": map[string]any{"next_cursor": ""},
+	}
+}
+
+// TestSearchChannels_ThreadRepliesIncluded verifies that when a top-level message
+// has thread replies, those replies are nested under the parent in the output tree.
+func TestSearchChannels_ThreadRepliesIncluded(t *testing.T) {
+	srv := newSlackTestServer(t, map[string]any{
+		"conversations.list": channelListResponse([]map[string]any{
+			{"id": "C001", "name": "jiro-2006"},
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{
+			{
+				"user":        "U001",
+				"text":        "I guess now we have link throught",
+				"ts":          "1700000001.000001",
+				"thread_ts":   "1700000001.000001",
+				"reply_count": 1,
+				"client_msg_id": "msg-001",
+			},
+		}),
+		"conversations.replies": threadRepliesResponse([]map[string]any{
+			{
+				"user":          "U001",
+				"text":          "I guess now we have link throught",
+				"ts":            "1700000001.000001",
+				"thread_ts":     "1700000001.000001",
+				"client_msg_id": "msg-001",
+			},
+			{
+				"user":          "U002",
+				"text":          "Im not sure I understand the question.",
+				"ts":            "1700000002.000001",
+				"thread_ts":     "1700000001.000001",
+				"client_msg_id": "msg-002",
+			},
+		}),
+	})
+
+	store := storeWithCredsForCLI(t, "jiro", "xoxc-test", "xoxd-test")
+	var out bytes.Buffer
+	cmd := &SearchChannelsCommand{Store: store, Output: &out, ClientFactory: newTestClientFactory(t, srv)}
+
+	require.NoError(t, cmd.Run(context.Background(), "jiro", "jiro 2006"))
+
+	results := decodeChannelResults(t, &out)
+	require.Len(t, results, 1)
+	require.Len(t, results[0].Messages, 1, "only the parent message should appear at the top level")
+	assert.Equal(t, "I guess now we have link throught", results[0].Messages[0].Text)
+	require.Len(t, results[0].Messages[0].Replies, 1, "reply must be nested under the parent message")
+	assert.Equal(t, "Im not sure I understand the question.", results[0].Messages[0].Replies[0].Text)
+	assert.Equal(t, "U002", results[0].Messages[0].Replies[0].User)
+}
+
+// TestSearchChannels_ThreadReplyUserResolution verifies that user IDs in thread
+// replies are resolved to display names.
+func TestSearchChannels_ThreadReplyUserResolution(t *testing.T) {
+	srv := newSlackTestServer(t, map[string]any{
+		"conversations.list": channelListResponse([]map[string]any{
+			{"id": "C001", "name": "jiro-2006"},
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{
+			{
+				"user":          "U001",
+				"text":          "I guess now we have link throught",
+				"ts":            "1700000001.000001",
+				"thread_ts":     "1700000001.000001",
+				"reply_count":   1,
+				"client_msg_id": "msg-001",
+			},
+		}),
+		"conversations.replies": threadRepliesResponse([]map[string]any{
+			{
+				"user":          "U001",
+				"text":          "I guess now we have link throught",
+				"ts":            "1700000001.000001",
+				"thread_ts":     "1700000001.000001",
+				"client_msg_id": "msg-001",
+			},
+			{
+				"user":          "U002",
+				"text":          "Im not sure I understand the question.",
+				"ts":            "1700000002.000001",
+				"thread_ts":     "1700000001.000001",
+				"client_msg_id": "msg-002",
+			},
+		}),
+		"users.info": map[string]any{
+			"ok": true,
+			"user": map[string]any{
+				"real_name": "Liora Rodill",
+				"name":      "liora",
+			},
+		},
+	})
+
+	store := storeWithCredsForCLI(t, "jiro", "xoxc-test", "xoxd-test")
+	var out bytes.Buffer
+	cmd := &SearchChannelsCommand{Store: store, Output: &out, ClientFactory: newTestClientFactory(t, srv)}
+
+	require.NoError(t, cmd.Run(context.Background(), "jiro", "jiro 2006"))
+
+	results := decodeChannelResults(t, &out)
+	require.Len(t, results, 1)
+	require.Len(t, results[0].Messages[0].Replies, 1)
+	assert.Equal(t, "Liora Rodill", results[0].Messages[0].Replies[0].User)
+}
+
 // TestSearchChannels_MultipleChannelsWithMessages verifies that multiple
 // matched channels each carry their own messages.
 func TestSearchChannels_MultipleChannelsWithMessages(t *testing.T) {
