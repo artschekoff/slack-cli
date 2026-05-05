@@ -13,13 +13,19 @@ import (
 	"github.com/artschekoff/slack-cli/internal/slack"
 )
 
+// ReactionSummary is one reaction on a message.
+type ReactionSummary struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
 // LoadThreadMessage is one message in a LoadThreadResult.
 type LoadThreadMessage struct {
-	UserID    string `json:"userId"`
-	Timestamp string `json:"timestamp"`
-	Text      string `json:"text"`
-	Reactions string `json:"reactions,omitempty"`
-	Files     string `json:"files,omitempty"`
+	UserID    string            `json:"userId"`
+	Timestamp string            `json:"timestamp"`
+	Text      string            `json:"text"`
+	Reactions []ReactionSummary `json:"reactions,omitempty"`
+	Files     []string          `json:"files,omitempty"`
 }
 
 // LoadThreadResult is the JSON output of load-thread.
@@ -58,12 +64,16 @@ func (c *LoadThreadCommand) Run(ctx context.Context, workspace, channelID, threa
 		Truncated: truncated,
 	}
 	for _, m := range messages {
+		reactions := make([]ReactionSummary, 0, len(m.Reactions))
+		for _, r := range m.Reactions {
+			reactions = append(reactions, ReactionSummary{Name: r.Name, Count: r.Count})
+		}
 		out.Messages = append(out.Messages, LoadThreadMessage{
 			UserID:    m.UserID,
-			Timestamp: m.Timestamp,
+			Timestamp: m.RawTS,
 			Text:      m.Text,
-			Reactions: threadFormatReactions(m.Reactions),
-			Files:     threadFormatFiles(m.Files),
+			Reactions: reactions,
+			Files:     m.Files,
 		})
 	}
 
