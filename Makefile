@@ -8,7 +8,7 @@ build:
 	go build -o $(BIN) $(CMD)
 
 install: build
-	install -m 755 $(BIN) $(INSTALL_DIR)/slack-cli
+	sudo install -m 755 $(BIN) $(INSTALL_DIR)/slack-cli
 
 run:
 	go run $(CMD)
