@@ -450,6 +450,30 @@ func TestSearchChannels_ThreadReplyUserResolution(t *testing.T) {
 	assert.Equal(t, "Liora Rodill", results[0].Messages[0].Replies[0].User)
 }
 
+// TestSearchChannels_RawTSInOutput verifies that every message in the JSON output
+// carries a "rawTs" field populated from the Slack raw timestamp.
+func TestSearchChannels_RawTSInOutput(t *testing.T) {
+	srv := newSlackTestServer(t, map[string]any{
+		"conversations.list": channelListResponse([]map[string]any{
+			{"id": "C001", "name": "epic-970"},
+		}),
+		"conversations.history": channelHistoryResponse([]map[string]any{
+			{"user": "U001", "text": "hello", "ts": "1746441180.000000"},
+		}),
+	})
+
+	store := storeWithCredsForCLI(t, "acme", "xoxc-test", "xoxd-test")
+	var out bytes.Buffer
+	cmd := &SearchChannelsCommand{Store: store, Output: &out, ClientFactory: newTestClientFactory(t, srv)}
+
+	require.NoError(t, cmd.Run(context.Background(), "acme", "970"))
+
+	results := decodeChannelResults(t, &out)
+	require.Len(t, results, 1)
+	require.Len(t, results[0].Messages, 1)
+	assert.Equal(t, "1746441180.000000", results[0].Messages[0].RawTS, "rawTs must be populated from the Slack timestamp")
+}
+
 // TestSearchChannels_MultipleChannelsWithMessages verifies that multiple
 // matched channels each carry their own messages.
 func TestSearchChannels_MultipleChannelsWithMessages(t *testing.T) {

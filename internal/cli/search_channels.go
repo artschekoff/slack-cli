@@ -22,10 +22,13 @@ const (
 
 // messageResult is one message inside a channelResult.
 // Replies contains direct thread replies nested under this message.
+// RawTS is the unformatted Slack timestamp (e.g. "1746441180.000000") used as the
+// per-message dedup key when storing messages as individual slack_thread records.
 type messageResult struct {
 	User      string          `json:"user"`
 	Text      string          `json:"text"`
 	Timestamp string          `json:"timestamp"`
+	RawTS     string          `json:"rawTs,omitempty"`
 	Replies   []messageResult `json:"replies,omitempty"`
 }
 
@@ -183,6 +186,7 @@ func (c *SearchChannelsCommand) Run(ctx context.Context, workspace, namePattern 
 				User:      user,
 				Text:      msg.Text,
 				Timestamp: msg.Timestamp,
+				RawTS:     msg.RawTS,
 			}
 			for _, reply := range m.replies[msg.RawTS] {
 				if !c.SystemEvents && reply.IsSystemMessage() {
@@ -199,6 +203,7 @@ func (c *SearchChannelsCommand) Run(ctx context.Context, workspace, namePattern 
 					User:      replyUser,
 					Text:      reply.Text,
 					Timestamp: reply.Timestamp,
+					RawTS:     reply.RawTS,
 				})
 			}
 			msgResults = append(msgResults, mr)
