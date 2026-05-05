@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,21 @@ import (
 	"github.com/artschekoff/slack-cli/internal/slack"
 )
 
+// LoadThreadMessage is one message in a LoadThreadResult.
+type LoadThreadMessage struct {
+	UserID    string `json:"userId"`
+	Timestamp string `json:"timestamp"`
+	Text      string `json:"text"`
+	Reactions string `json:"reactions,omitempty"`
+	Files     string `json:"files,omitempty"`
+}
+
+// LoadThreadResult is the JSON output of load-thread.
+type LoadThreadResult struct {
+	Messages  []LoadThreadMessage `json:"messages"`
+	Truncated bool                `json:"truncated"`
+}
+
 // LoadThreadCommand loads all messages in a Slack thread.
 type LoadThreadCommand struct {
 	Store         *credentials.Store
@@ -19,7 +35,7 @@ type LoadThreadCommand struct {
 	ClientFactory ClientFactory
 }
 
-// Run fetches thread replies and writes them formatted to Output.
+// Run fetches thread replies and writes them as JSON to Output.
 func (c *LoadThreadCommand) Run(ctx context.Context, workspace, channelID, threadTS string, startFrom time.Time) error {
 	client, err := resolveClient(ctx, c.Store, workspace, c.ClientFactory)
 	if err != nil {
@@ -37,30 +53,21 @@ func (c *LoadThreadCommand) Run(ctx context.Context, workspace, channelID, threa
 		return fmt.Errorf("%w: %v", ErrSlackLoadThread, err)
 	}
 
-	if len(messages) == 0 {
-		fmt.Fprint(c.Output, "No messages found in this thread.")
-		return nil
+	out := LoadThreadResult{
+		Messages:  make([]LoadThreadMessage, 0, len(messages)),
+		Truncated: truncated,
 	}
-
-	fmt.Fprintf(c.Output, "Thread (%d messages):\n\n", len(messages))
 	for _, m := range messages {
-		reactions := threadFormatReactions(m.Reactions)
-		files := threadFormatFiles(m.Files)
-
-		fmt.Fprintf(c.Output, "**%s** (%s):\n%s\n", m.UserID, m.Timestamp, m.Text)
-		if reactions != "" {
-			fmt.Fprintf(c.Output, "Reactions: %s\n", reactions)
-		}
-		if files != "" {
-			fmt.Fprintf(c.Output, "Attachments: %s\n", files)
-		}
-		fmt.Fprint(c.Output, "\n---\n\n")
+		out.Messages = append(out.Messages, LoadThreadMessage{
+			UserID:    m.UserID,
+			Timestamp: m.Timestamp,
+			Text:      m.Text,
+			Reactions: threadFormatReactions(m.Reactions),
+			Files:     threadFormatFiles(m.Files),
+		})
 	}
 
-	if truncated {
-		fmt.Fprint(c.Output, "⚠️ Results truncated — thread has more messages than the pagination limit allows.\n")
-	}
-	return nil
+	return json.NewEncoder(c.Output).Encode(out)
 }
 
 func threadFormatReactions(reactions []slack.Reaction) string {

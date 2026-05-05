@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -33,12 +34,17 @@ func TestLoadThreadCommand_Success(t *testing.T) {
 
 	err := cmd.Run(context.Background(), "acme", "C001", "1700000001.000001", time.Time{})
 	require.NoError(t, err)
-	text := out.String()
-	assert.Contains(t, text, "U001")
-	assert.Contains(t, text, "first message")
-	assert.Contains(t, text, ":thumbsup: 3")
-	assert.Contains(t, text, "U002")
-	assert.Contains(t, text, "report.pdf")
+
+	var result LoadThreadResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+
+	require.Len(t, result.Messages, 2)
+	assert.Equal(t, "U001", result.Messages[0].UserID)
+	assert.Equal(t, "first message", result.Messages[0].Text)
+	assert.Equal(t, ":thumbsup: 3", result.Messages[0].Reactions)
+	assert.Equal(t, "U002", result.Messages[1].UserID)
+	assert.Equal(t, "report.pdf", result.Messages[1].Files)
+	assert.False(t, result.Truncated)
 }
 
 func TestLoadThreadCommand_NoMessages(t *testing.T) {
@@ -52,7 +58,11 @@ func TestLoadThreadCommand_NoMessages(t *testing.T) {
 
 	err := cmd.Run(context.Background(), "acme", "C001", "1700000001.000001", time.Time{})
 	require.NoError(t, err)
-	assert.Contains(t, out.String(), "No messages")
+
+	var result LoadThreadResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	assert.Empty(t, result.Messages)
+	assert.False(t, result.Truncated)
 }
 
 func TestLoadThreadCommand_Unauthorized(t *testing.T) {
