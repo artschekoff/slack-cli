@@ -44,22 +44,22 @@ func NewRootCmd(deps RootDeps) *cobra.Command {
 Credential management:
   slack-cli auth [workspace]                    interactive auth (browser + prompts)
   slack-cli auth-start [workspace]              print browser extraction instructions
-  slack-cli auth-complete <workspace>           save credentials non-interactively
-  slack-cli list-workspaces                     list saved workspaces
-  slack-cli get-credentials <workspace>         check credential status
-  slack-cli show-creds                          show credentials file path
-  slack-cli test-creds [workspace]              validate stored credentials
+  slack-cli auth-complete <workspace>           save credentials non-interactively (--token, --cookie)
+  slack-cli list-workspaces                     list saved workspace names (plain text, one per line)
+  slack-cli get-credentials <workspace>         check whether credentials exist (plain text)
+  slack-cli show-creds                          show workspace list and credentials file path (plain text)
+  slack-cli test-creds [workspace]              validate stored credentials against Slack API (plain text)
   slack-cli remove-creds [workspace]            delete stored credentials
 
 Slack operations:
-  slack-cli search <workspace> <query>                  search messages
-  slack-cli search-channels <workspace> <pattern>       list channels whose names contain pattern (JSON)
-  slack-cli list-dms <workspace>                        list direct message conversations (JSON)
-  slack-cli load-thread <workspace> <ch> <ts>           load a thread
-  slack-cli load-context <workspace> <ch> <ts>          load thread as markdown for AI
-  slack-cli get-user <workspace> <user-id>              resolve user ID to display name
+  slack-cli search <workspace> <query>                  full-text message search (plain text, --count, --start-from)
+  slack-cli search-channels <workspace> <pattern>       find channels by name, return messages (JSON array)
+  slack-cli list-dms <workspace>                        list DM conversations with resolved names (JSON array)
+  slack-cli load-thread <workspace> <ch> <ts>           fetch all thread messages (JSON object, --start-from)
+  slack-cli load-context <workspace> <ch> <ts>          fetch thread as markdown with resolved names (markdown)
+  slack-cli get-user <workspace> <user-id>              resolve a Slack user ID to display name (plain text)
 
-Use "slack-cli <command> --help" for flags and examples for each command.`,
+Use "slack-cli <command> --help" for full argument, flag, and output format details.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -88,7 +88,15 @@ func newAuthCmd(deps RootDeps) *cobra.Command {
 		Short: "Authenticate with a Slack workspace",
 		Long: `Opens Slack in your browser and guides you through extracting the
 session token and cookie. If credentials for the workspace are already
-stored and still valid, they are reused without re-authenticating.`,
+stored and still valid, they are reused without re-authenticating.
+
+Input:
+  workspace  Optional name to assign to this workspace (prompted if omitted)
+
+Output: plain text status messages confirming successful save or reporting errors.
+
+Example:
+  slack-cli auth acme`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			workspace := ""
@@ -114,7 +122,12 @@ func newShowCredsCmd(deps RootDeps) *cobra.Command {
 		Use:   "show-creds",
 		Short: "List saved workspaces and show the credentials file path",
 		Long: `Prints all saved workspace names (without secrets) and the path
-to ~/.slack/workspace_credentials.json.`,
+to ~/.slack/workspace_credentials.json.
+
+Output: plain text — one workspace name per line followed by the credentials file path.
+
+Example:
+  slack-cli show-creds`,
 		Args: cobra.NoArgs,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {
 			cmd := &ShowCredsCommand{
@@ -131,7 +144,15 @@ func newRemoveCredsCmd(deps RootDeps) *cobra.Command {
 		Use:   "remove-creds [workspace]",
 		Short: "Remove stored credentials for a workspace",
 		Long: `Removes the saved token and cookie for the given workspace from
-~/.slack/workspace_credentials.json. If no workspace is given, you will be prompted.`,
+~/.slack/workspace_credentials.json. If no workspace is given, you will be prompted.
+
+Input:
+  workspace  Name of the workspace to remove (prompted if omitted)
+
+Output: plain text confirmation of deletion.
+
+Example:
+  slack-cli remove-creds acme`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			workspace := ""
@@ -153,8 +174,16 @@ func newTestCredsCmd(deps RootDeps) *cobra.Command {
 		Use:   "test-creds [workspace]",
 		Short: "Test whether stored credentials for a workspace are valid",
 		Long: `Decrypts and validates the stored Slack credentials for the given
-workspace by calling auth.test. Reports whether the credentials are present
-and valid without modifying the store. If no workspace is given, you will be prompted.`,
+workspace by calling Slack's auth.test API. Reports whether the credentials are
+present and valid without modifying the store. If no workspace is given, you will be prompted.
+
+Input:
+  workspace  Name of the workspace to test (prompted if omitted)
+
+Output: plain text — reports "valid" with the authenticated user/team, or an error if invalid/missing.
+
+Example:
+  slack-cli test-creds acme`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			workspace := ""
@@ -181,6 +210,9 @@ func newListWorkspacesCmd(deps RootDeps) *cobra.Command {
 		Long: `Prints the names of all workspaces that have credentials stored in
 ~/.slack/workspace_credentials.json. No secrets are shown.
 
+Output: plain text — one workspace name per line. Use these names as the <workspace> argument
+for all other commands (search, load-thread, etc.).
+
 Example:
   slack-cli list-workspaces`,
 		Args: cobra.NoArgs,
@@ -198,6 +230,11 @@ func newGetCredentialsCmd(deps RootDeps) *cobra.Command {
 		Long: `Reports whether a token and cookie are stored for the given workspace.
 The actual secret values are never printed; only "present" or "missing" is shown.
 
+Input:
+  workspace  Name of the saved workspace (e.g. acme)
+
+Output: plain text — two lines reporting "token: present/missing" and "cookie: present/missing".
+
 Example:
   slack-cli get-credentials acme`,
 		Args: cobra.ExactArgs(1),
@@ -214,7 +251,12 @@ func newAuthStartCmd(deps RootDeps) *cobra.Command {
 		Short: "Open Slack in browser and print token/cookie extraction instructions",
 		Long: `Opens https://app.slack.com in your browser and prints step-by-step
 instructions for extracting your Slack session token (xoxc-...) and cookie
-(xoxd-...) from the browser DevTools.
+(xoxd-...) from the browser DevTools Network tab.
+
+Input:
+  workspace  Optional workspace name to use later with auth-complete (for reference only)
+
+Output: plain text instructions printed to stdout. Nothing is saved yet.
 
 Once you have both values, complete authentication with:
   slack-cli auth-complete <workspace> --token xoxc-... --cookie xoxd-...
@@ -240,12 +282,15 @@ func newAuthCompleteCmd(deps RootDeps) *cobra.Command {
 		Use:   "auth-complete <workspace>",
 		Short: "Validate and save Slack credentials non-interactively",
 		Long: `Validates the given token and cookie against Slack's auth.test API,
-then saves them for the workspace. Unlike "auth", this command is fully
-non-interactive and suitable for scripting or CI.
+then saves them encrypted under the given workspace name. Unlike "auth", this
+command is fully non-interactive and suitable for scripting or CI.
 
-Flags:
-  --token   Slack user token (required, must start with "xoxc-")
-  --cookie  Slack browser cookie "d" value (required, must start with "xoxd-")
+Input:
+  workspace   Name to save credentials under (e.g. acme)
+  --token     Slack user token (required); must start with "xoxc-"
+  --cookie    Slack browser cookie "d" value (required); must start with "xoxd-"
+
+Output: plain text confirmation that credentials were validated and saved.
 
 Example:
   slack-cli auth-complete acme \
@@ -274,12 +319,26 @@ func newSearchCmd(deps RootDeps) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "search <workspace> <query>",
 		Short: "Search Slack messages",
-		Long: `Searches Slack messages using the given query and prints matching results
-with channel, author, timestamp, permalink, and message text.
+		Long: `Searches Slack messages using the full-text search API (same syntax as Slack's
+search bar) and prints matching results grouped by channel.
+
+Input:
+  workspace  Name of the saved workspace (e.g. acme)
+  query      Free-text search query (e.g. "deployment failed", "in:#general bug")
 
 Flags:
   --count       Maximum number of results to return (default 20, max 100)
   --start-from  Only include messages on or after this date (YYYY-MM-DD)
+
+Output format (plain text, stdout):
+  Search results for "query" in workspace 'acme' (showing N of M total):
+
+  #channel-name (CXXXXXXXX) — N messages:
+    1. Username | 2024-01-15 10:30 | Message text here
+       Permalink: https://acme.slack.com/archives/C.../p...
+       thread_ts: 1705312200.000000
+
+  Use thread_ts + channel ID with load-thread or load-context to fetch the full thread.
 
 Examples:
   slack-cli search acme "deployment failed"
@@ -309,25 +368,58 @@ func newSearchChannelsCmd(deps RootDeps) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "search-channels <workspace> <pattern>",
 		Short: "List Slack channels matching a name pattern with their messages (JSON output)",
-		Long: `Lists all accessible Slack channels whose names contain the given substring
-and writes a JSON array of {id, name, messages} objects to stdout.
+		Long: `Lists all accessible Slack channels whose names contain the given substring,
+fetches their messages with thread replies, resolves user IDs to display names,
+and writes a JSON array to stdout.
 
-Matching is case-insensitive and treats hyphens as spaces, so "epic 970"
-and "970" both match a channel named "epic-970".
+Matching is case-insensitive and treats hyphens as spaces, so "epic 970" and
+"970" both match a channel named "epic-970". An empty result set is written as [].
 
 By default system notifications (joined/left, topic changes, etc.) and bot/app
-messages are filtered out. Use the flags below to include them.
+messages are filtered out.
+
+Input:
+  workspace  Name of the saved workspace (e.g. acme)
+  pattern    Substring to match against channel names (case-insensitive, hyphens = spaces)
 
 Flags:
   --system-events  Include system notification messages (channel_join, channel_leave, etc.)
   --bot-messages   Include bot and app integration messages
 
+Output format (JSON array, stdout):
+  [
+    {
+      "id": "CXXXXXXXX",
+      "name": "epic-970",
+      "truncated": false,
+      "messages": [
+        {
+          "user": "Jane Doe",
+          "text": "message text",
+          "timestamp": "2024-01-15 10:30",
+          "rawTs": "1705312200.000000",
+          "replies": [
+            {
+              "user": "John Smith",
+              "text": "reply text",
+              "timestamp": "2024-01-15 10:31",
+              "rawTs": "1705312260.000000"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+
+  rawTs is the raw Slack timestamp — use it as thread-ts with load-thread or load-context.
+  replies is omitted when a message has no thread replies.
+  truncated is true when the channel has more messages than the page limit allows.
+
 Examples:
   slack-cli search-channels acme 970
   slack-cli search-channels acme "epic 970"
   slack-cli search-channels acme deploy --system-events
-  slack-cli search-channels acme deploy --bot-messages
-  slack-cli search-channels acme deploy --system-events --bot-messages`,
+  slack-cli search-channels acme deploy --bot-messages`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			cmd := &SearchChannelsCommand{
@@ -351,21 +443,46 @@ func newListDMsCmd(deps RootDeps) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "list-dms <workspace>",
 		Short: "List direct message conversations with resolved user names (JSON output)",
-		Long: `Lists all accessible Slack direct message conversations (1:1 and group DMs)
-and writes a JSON array of {id, userId, userName, name, isIm} objects to stdout.
+		Long: `Lists all accessible Slack direct message conversations (1:1 and group DMs).
+For 1:1 DMs, the other user's ID is resolved to a display name. Group DMs include
+the auto-generated conversation name. Writes a JSON array to stdout.
 
-For 1:1 DMs, user IDs are resolved to display names. Group DMs (mpim) include
-the auto-generated conversation name.
+When --start-from is set, only DMs that have a qualifying user message on or
+after that date are returned (Slack's API does not expose a reliable last-activity
+timestamp, so messages are fetched to filter). When --with-messages is set, the
+latest user-authored message is included in each result object.
 
-When --with-messages is set, the latest message for each DM is included. By
-default, system notifications and bot messages (e.g. "X joined Slack") are
-filtered out so only user-authored messages are shown. Pass --system-events to
-include them.
+Input:
+  workspace  Name of the saved workspace (e.g. acme)
 
 Flags:
-  --start-from      Only include DMs created on or after this date (YYYY-MM-DD)
+  --start-from      Only include DMs with activity on or after this date (YYYY-MM-DD)
   --with-messages   Include the latest message for each DM conversation
   --system-events   Include system/bot messages (e.g. "joined Slack" notifications)
+
+Output format (JSON array, stdout):
+  [
+    {
+      "id": "DXXXXXXXX",
+      "userId": "UXXXXXXXX",
+      "userName": "Jane Doe",
+      "isIm": true,
+      "lastMessage": {
+        "userId": "UXXXXXXXX",
+        "text": "message text",
+        "timestamp": "2024-01-15 10:30"
+      }
+    },
+    {
+      "id": "GXXXXXXXX",
+      "name": "mpdm-alice--bob--carol-1",
+      "isIm": false
+    }
+  ]
+
+  userId/userName are present only for 1:1 DMs (isIm: true).
+  name is present only for group DMs (isIm: false).
+  lastMessage is present only when --with-messages is set.
 
 Examples:
   slack-cli list-dms acme
@@ -399,18 +516,40 @@ func newLoadThreadCmd(deps RootDeps) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "load-thread <workspace> <channel-id> <thread-ts>",
 		Short: "Load all messages in a Slack thread",
-		Long: `Fetches all replies in a Slack thread and prints them with author,
-timestamp, reactions, and file attachments.
+		Long: `Fetches all replies in a Slack thread and writes them as a JSON object to stdout.
+User IDs are NOT resolved to display names — use load-context if you need resolved names.
 
-Arguments:
+The thread-ts is the raw Slack timestamp of the parent (root) message. Obtain it from:
+  - the rawTs field in search-channels output, or
+  - a Slack permalink by converting p1700000000123456 → 1700000000.123456
+
+Input:
   workspace   Name of the saved workspace (e.g. acme)
-  channel-id  Slack channel ID (e.g. C01234567)
+  channel-id  Slack channel ID starting with "C" (e.g. C01234567)
   thread-ts   Thread timestamp (e.g. 1700000000.123456) — the ts of the parent message
 
 Flags:
   --start-from  Only include messages on or after this date (YYYY-MM-DD)
 
-Example:
+Output format (JSON object, stdout):
+  {
+    "messages": [
+      {
+        "userId": "UXXXXXXXX",
+        "timestamp": "1700000000.123456",
+        "text": "message text",
+        "reactions": [{"name": "thumbsup", "count": 2}],
+        "files": ["filename.pdf"]
+      }
+    ],
+    "truncated": false
+  }
+
+  userId is the raw Slack user ID (not resolved); use get-user to resolve it.
+  reactions and files are omitted when empty.
+  truncated is true when the thread exceeds the pagination limit.
+
+Examples:
   slack-cli load-thread acme C01234567 1700000000.123456
   slack-cli load-thread acme C01234567 1700000000.123456 --start-from 2024-06-01`,
 		Args: cobra.ExactArgs(3),
@@ -436,11 +575,13 @@ func newGetUserCmd(deps RootDeps) *cobra.Command {
 		Use:   "get-user <workspace> <user-id>",
 		Short: "Resolve a Slack user ID to a display name",
 		Long: `Looks up a Slack user by their ID and prints their display name and real name.
-Useful for resolving the raw user IDs that appear in message payloads.
+Useful for resolving raw user IDs that appear in load-thread output (userId fields).
 
-Arguments:
+Input:
   workspace  Name of the saved workspace (e.g. acme)
   user-id    Slack user ID starting with "U" (e.g. U01234567)
+
+Output: plain text — display name and real name on separate lines.
 
 Example:
   slack-cli get-user acme U01234567`,
@@ -461,19 +602,41 @@ func newLoadContextCmd(deps RootDeps) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "load-context <workspace> <channel-id> <thread-ts>",
 		Short: "Load a Slack thread with resolved user names (markdown output)",
-		Long: `Fetches a Slack thread, resolves all user IDs to display names, and
-formats the result as markdown — ideal for pasting into AI assistants or docs.
+		Long: `Fetches a Slack thread, resolves all user IDs to display names, and writes
+formatted markdown to stdout — ideal for piping into an AI assistant or document.
 
-Arguments:
+The thread-ts is the raw Slack timestamp of the parent (root) message. Obtain it from:
+  - the rawTs field in search-channels output, or
+  - the thread_ts field in search output, or
+  - a Slack permalink by converting p1700000000123456 → 1700000000.123456
+
+Input:
   workspace   Name of the saved workspace (e.g. acme)
-  channel-id  Slack channel ID (e.g. C01234567)
+  channel-id  Slack channel ID starting with "C" (e.g. C01234567)
   thread-ts   Thread timestamp (e.g. 1700000000.123456) — the ts of the parent message
 
 Flags:
   --permalink     Slack permalink URL for the thread (added to output header)
-  --channel-name  Channel display name, e.g. "general" (added to output header)
-  --search-query  Original search query used as a context label in the output
+  --channel-name  Human-readable channel name, e.g. "general" (used in header instead of ID)
+  --search-query  Label for the markdown heading (e.g. the query that found this thread)
   --start-from    Only include messages on or after this date (YYYY-MM-DD)
+
+Output format (markdown, stdout):
+  # Slack Context: "search-query" — #channel-name
+
+  **Source:** #channel-name | **Started:** 2024-01-15 10:30 | **Messages:** 5
+  **Permalink:** https://...
+
+  ---
+
+  > **Jane Doe** (2024-01-15 10:30):
+  > Message text here
+  > _Reactions: :thumbsup: 2_
+  > _Attachments: file.pdf_
+
+  ---
+
+  Slack context loaded: **5** message(s) from **#channel-name** (thread: 1700000000.123456).
 
 Examples:
   slack-cli load-context acme C01234567 1700000000.123456
