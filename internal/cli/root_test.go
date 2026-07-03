@@ -3,10 +3,12 @@ package cli
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/artschekoff/slack-cli/internal/credentials"
+	"github.com/artschekoff/slack-cli/internal/session"
 	"github.com/artschekoff/slack-cli/internal/slack"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,11 +19,12 @@ import (
 func newRootDeps(t *testing.T, input string, out *bytes.Buffer) RootDeps {
 	t.Helper()
 	return RootDeps{
-		Store:       newTempStore(t),
-		OpenBrowser: nopBrowser,
-		Input:       strings.NewReader(input),
-		Output:      out,
-		Validate:    successValidator,
+		Store:        newTempStore(t),
+		SessionStore: session.NewStore(filepath.Join(t.TempDir(), "session")),
+		OpenBrowser:  nopBrowser,
+		Input:        strings.NewReader(input),
+		Output:       out,
+		Validate:     successValidator,
 	}
 }
 
