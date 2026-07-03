@@ -64,6 +64,7 @@ Slack operations:
 
 Session management:
   slack-cli login                               store master passphrase encrypted on disk
+  slack-cli logout                              delete stored master passphrase
 
 Use "slack-cli <command> --help" for full argument, flag, and output format details.`,
 		SilenceUsage:  true,
@@ -72,6 +73,7 @@ Use "slack-cli <command> --help" for full argument, flag, and output format deta
 
 	root.AddCommand(newAuthCmd(deps))
 	root.AddCommand(newLoginCmd(deps))
+	root.AddCommand(newLogoutCmd(deps))
 	root.AddCommand(newShowCredsCmd(deps))
 	root.AddCommand(newRemoveCredsCmd(deps))
 	root.AddCommand(newTestCredsCmd(deps))
