@@ -7,6 +7,7 @@ import (
 
 	"github.com/artschekoff/slack-cli/internal/browser"
 	"github.com/artschekoff/slack-cli/internal/credentials"
+	"github.com/artschekoff/slack-cli/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +16,7 @@ import (
 // touching the filesystem or a real browser.
 type RootDeps struct {
 	Store         *credentials.Store
+	SessionStore  *session.Store
 	OpenBrowser   func(url string) error
 	Input         io.Reader
 	Output        io.Writer
@@ -23,9 +25,10 @@ type RootDeps struct {
 }
 
 // DefaultRootDeps builds production-ready dependencies.
-func DefaultRootDeps(store *credentials.Store) RootDeps {
+func DefaultRootDeps(store *credentials.Store, sessionStore *session.Store) RootDeps {
 	return RootDeps{
 		Store:         store,
+		SessionStore:  sessionStore,
 		OpenBrowser:   browser.Open,
 		Input:         os.Stdin,
 		Output:        os.Stdout,
@@ -59,12 +62,16 @@ Slack operations:
   slack-cli load-context <workspace> <ch> <ts>          fetch thread as markdown with resolved names (markdown)
   slack-cli get-user <workspace> <user-id>              resolve a Slack user ID to display name (plain text)
 
+Session management:
+  slack-cli login                               store master passphrase encrypted on disk
+
 Use "slack-cli <command> --help" for full argument, flag, and output format details.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
 	root.AddCommand(newAuthCmd(deps))
+	root.AddCommand(newLoginCmd(deps))
 	root.AddCommand(newShowCredsCmd(deps))
 	root.AddCommand(newRemoveCredsCmd(deps))
 	root.AddCommand(newTestCredsCmd(deps))
