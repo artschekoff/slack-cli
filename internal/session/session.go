@@ -130,7 +130,7 @@ func decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, err
 	}
 	ns := gcm.NonceSize()
-	if len(ciphertext) < ns {
+	if len(ciphertext) < ns+gcm.Overhead() {
 		return nil, errors.New("session file too short")
 	}
 	nonce, ct := ciphertext[:ns], ciphertext[ns:]
