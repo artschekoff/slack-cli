@@ -1,15 +1,12 @@
 // Command slack-cli manages Slack credentials and exposes Slack operations
 // (search, threads, user lookup) as command-line subcommands.
 //
-// Run without arguments to see all available commands:
+// Log in once per machine to store the master passphrase:
 //
-//	slack-cli --help
+//	slack-cli login
+//	slack-cli logout
 //
-// Authenticate a workspace first:
-//
-//	slack-cli auth [workspace]
-//	slack-cli auth-start [workspace]   # non-interactive: shows instructions
-//	slack-cli auth-complete <workspace> --token xoxc-... --cookie xoxd-...
+// After login, every subcommand reads the passphrase from ~/.slack/session.
 package main
 
 import (
@@ -18,20 +15,26 @@ import (
 
 	"github.com/artschekoff/slack-cli/internal/cli"
 	"github.com/artschekoff/slack-cli/internal/credentials"
+	"github.com/artschekoff/slack-cli/internal/session"
 )
 
-const version = "1.0.0"
-
 func main() {
-	store, err := credentials.NewStore(
-		credentials.WithPassphrase(buildPassphraseProvider()),
+	sessionPath, err := session.DefaultPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "slack-cli: %v\n", err)
+		os.Exit(1)
+	}
+	sessStore := session.NewStore(sessionPath)
+
+	credStore, err := credentials.NewStore(
+		credentials.WithPassphrase(buildPassphraseProvider(sessStore)),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slack-cli: initializing credential store: %v\n", err)
 		os.Exit(1)
 	}
 
-	root := cli.NewRootCmd(cli.DefaultRootDeps(store))
+	root := cli.NewRootCmd(cli.DefaultRootDeps(credStore, sessStore))
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "slack-cli: %v\n", err)
