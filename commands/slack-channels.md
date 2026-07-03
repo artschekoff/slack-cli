@@ -14,7 +14,7 @@ slack-cli list-workspaces
 - Has workspaces → AskQuestion: pick one (+ `Other — enter manually`) → store as `WORKSPACE`.
 - Empty → **Auth flow**.
 
-**Auth flow:** Ask for workspace name → `slack-cli auth-start $WORKSPACE` (opens browser) → ask user for `xoxc-` token and `xoxd-` cookie → `slack-cli auth-complete $WORKSPACE --token <token> --cookie <cookie>`.
+**Auth flow:** If any command below returns `no active session; run: slack-cli login`, run `slack-cli login` first (interactive prompt for the master passphrase — one-time per machine). Then: ask for workspace name → `slack-cli auth-start $WORKSPACE` (opens browser) → ask user for `xoxc-` token and `xoxd-` cookie → `slack-cli auth-complete $WORKSPACE --token <token> --cookie <cookie>`.
 
 ## Step 2: Get channel pattern
 

@@ -15,6 +15,7 @@ slack-cli list-workspaces
 - Empty output → **Auth flow**.
 
 **Auth flow:**
+0. If any `slack-cli` command reports `no active session; run: slack-cli login`, run `slack-cli login` first — interactive prompt for the master passphrase, one-time per machine.
 1. Ask for workspace name → store as `WORKSPACE`.
 2. `slack-cli auth-start $WORKSPACE` (opens browser, prints extraction instructions).
 3. Ask user to provide `xoxc-` token and `xoxd-` cookie.
