@@ -91,6 +91,7 @@ rulesync.local.jsonc
 **/CLAUDE.local.md
 **/.claude/CLAUDE.md
 **/.claude/CLAUDE.local.md
+!/CLAUDE.md
 **/.claude/rules/
 **/.claude/commands/
 **/.claude/agents/

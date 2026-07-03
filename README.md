@@ -38,11 +38,31 @@ Requires Go 1.26+.
 
 A Slack workspace you can sign in to. `slack-cli` authenticates with a browser-session token (`xoxc-…`) + cookie (`xoxd-…`) — no Slack app or admin approval required. Run `slack-cli auth <workspace>` to extract and store them interactively, or `slack-cli auth-start <workspace>` to print the DevTools extraction steps.
 
-Credentials are encrypted with a passphrase read from `SLACK_MCP_PASSPHRASE` (env, used by the MCP server / headless runs) or an interactive terminal prompt. The passphrase used to save credentials must match the one used to read them.
+## Login
+
+The master passphrase that decrypts your workspace credentials is stored,
+encrypted, at `~/.slack/session`.
+
+```bash
+slack-cli login              # interactive prompt
+echo "$PASS" | slack-cli login --stdin   # for scripts / CI
+slack-cli logout             # delete the stored passphrase
+```
+
+After `login`, every other subcommand — and any MCP host that launches
+`slack-cli` — reads the passphrase from the session file automatically.
+
+**Security note.** The session file is AES-256-GCM encrypted with a key
+derived from your hostname and home directory. This defends against casual
+disk inspection and cloud-backup exposure. It does **not** protect against
+local malware running as your user account; anything with your shell
+privileges can call `slack-cli login`-derived keys the same way this
+process does. If you need stronger guarantees, use full-disk encryption
+and lock your machine.
 
 ## MCP server setup
 
-`slack-cli` powers the `slack-mcp` server. Add it to your MCP client config and set the passphrase so the server can decrypt stored credentials.
+`slack-cli` powers the `slack-mcp` server. Add it to your MCP client config. No env var is required — the MCP host inherits the passphrase from your `~/.slack/session` file (run `slack-cli login` once before starting the MCP host).
 
 **Cursor** (`.cursor/mcp.json`):
 
@@ -51,8 +71,7 @@ Credentials are encrypted with a passphrase read from `SLACK_MCP_PASSPHRASE` (en
   "mcpServers": {
     "slack": {
       "type": "stdio",
-      "command": "slack-mcp",
-      "env": { "SLACK_MCP_PASSPHRASE": "your-passphrase-here" }
+      "command": "slack-mcp"
     }
   }
 }
@@ -64,18 +83,17 @@ Credentials are encrypted with a passphrase read from `SLACK_MCP_PASSPHRASE` (en
 {
   "mcpServers": {
     "slack": {
-      "command": "slack-mcp",
-      "env": { "SLACK_MCP_PASSPHRASE": "your-passphrase-here" }
+      "command": "slack-mcp"
     }
   }
 }
 ```
 
-To save credentials with a matching passphrase, export it before authenticating:
+To save credentials, run `slack-cli login` once before starting the MCP host:
 
 ```bash
-export SLACK_MCP_PASSPHRASE=your-passphrase-here
-slack-cli auth-complete acme --token xoxc-... --cookie xoxd-...
+slack-cli login                                    # interactive prompt for passphrase
+slack-cli auth-complete acme --token xoxc-... --cookie xoxd-...  # save credentials for a workspace
 ```
 
 ## 🛠️ Tools
